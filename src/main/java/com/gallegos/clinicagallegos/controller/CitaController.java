@@ -16,12 +16,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/citas")
 public class CitaController {
     private final CitaService citaService;
+    private static final DateTimeFormatter[] ACCEPTED_FORMATS = new DateTimeFormatter[] {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
+    };
 
     public CitaController(CitaService citaService) {
         this.citaService = citaService;
@@ -132,21 +138,23 @@ public class CitaController {
     // Put para editar una cita (ADMIN)
     @PutMapping("/admin/{citaId}")
     public ResponseEntity<?> editarCitaAdmin(Authentication authentication,
-                                              @PathVariable Integer citaId,
-                                              @RequestBody EditarCitaRequest body) {
+                                               @PathVariable Integer citaId,
+                                               @RequestBody EditarCitaRequest body) {
         Usuario usuario = (Usuario) authentication.getPrincipal();
         if (usuario.getRol() == null || !usuario.getRol().name().equals("ADMIN")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Acceso denegado");
         }
         try {
-            // Permitir también cambio de estado dentro del mismo request
-            Cita editada = citaService.editarCitaAdmin(citaId, body.getServicioId(), body.getFechaHora(), body.getNotas());
-            if (body.getEstado() != null) {
+            // Parsear fechaHora de forma tolerante
+            LocalDateTime fecha = parseFechaHora(body.getFechaHora());
+            Cita editada = citaService.editarCitaAdmin(citaId, body.getServicioId(), fecha, body.getNotas());
+            if (body.getEstado() != null && !body.getEstado().isBlank()) {
                 try {
                     EstadoCita nuevo = EstadoCita.valueOf(body.getEstado().toUpperCase());
-                    editada.setEstado(nuevo);
                     editada = citaService.cambiarEstadoCitaAdmin(citaId, nuevo);
-                } catch (IllegalArgumentException ignored) {}
+                } catch (IllegalArgumentException ignored) {
+                    // si el estado no es válido, simplemente ignorar el cambio
+                }
             }
             return ResponseEntity.ok(new CitaAdminDTO(
                     editada.getCitaId(),
@@ -163,11 +171,11 @@ public class CitaController {
 
     // DTO interno para edición (simplifica iteración 2 sin archivo separado)
     public static class EditarCitaRequest {
-        private Integer servicioId; private LocalDateTime fechaHora; private String notas; private String estado;
+        private Integer servicioId; private String fechaHora; private String notas; private String estado;
         public Integer getServicioId() { return servicioId; }
         public void setServicioId(Integer servicioId) { this.servicioId = servicioId; }
-        public LocalDateTime getFechaHora() { return fechaHora; }
-        public void setFechaHora(LocalDateTime fechaHora) { this.fechaHora = fechaHora; }
+        public String getFechaHora() { return fechaHora; }
+        public void setFechaHora(String fechaHora) { this.fechaHora = fechaHora; }
         public String getNotas() { return notas; }
         public void setNotas(String notas) { this.notas = notas; }
         public String getEstado() { return estado; }
@@ -178,16 +186,50 @@ public class CitaController {
     public static class AgendarCitaAdminRequest {
         private Integer pacienteId;
         private Integer servicioId;
-        private LocalDateTime fechaHora;
+        private String fechaHora;
         private String notas;
 
         public Integer getPacienteId() { return pacienteId; }
         public void setPacienteId(Integer pacienteId) { this.pacienteId = pacienteId; }
         public Integer getServicioId() { return servicioId; }
         public void setServicioId(Integer servicioId) { this.servicioId = servicioId; }
-        public LocalDateTime getFechaHora() { return fechaHora; }
-        public void setFechaHora(LocalDateTime fechaHora) { this.fechaHora = fechaHora; }
+        public String getFechaHora() { return fechaHora; }
+        public void setFechaHora(String fechaHora) { this.fechaHora = fechaHora; }
         public String getNotas() { return notas; }
         public void setNotas(String notas) { this.notas = notas; }
+    }
+
+    // Endpoint para que el admin pueda agendar una cita para un usuario
+    @PostMapping("/admin/agendar")
+    public ResponseEntity<?> agendarCitaAdmin(Authentication authentication, @RequestBody AgendarCitaAdminRequest body) {
+        Usuario usuario = (Usuario) authentication.getPrincipal();
+        if (usuario.getRol() == null || !usuario.getRol().name().equals("ADMIN")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Acceso denegado");
+        }
+        try {
+            LocalDateTime fecha = parseFechaHora(body.getFechaHora());
+            Cita creada = citaService.agendarCitaParaUsuario(body.getPacienteId(), body.getServicioId(), fecha, body.getNotas());
+            return ResponseEntity.status(HttpStatus.CREATED).body(creada);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+
+    private LocalDateTime parseFechaHora(String s) {
+        if (s == null) return null;
+        String val = s.trim();
+        for (DateTimeFormatter fmt : ACCEPTED_FORMATS) {
+            try {
+                return LocalDateTime.parse(val, fmt);
+            } catch (DateTimeParseException ignored) {}
+        }
+        // Intentar normalizar agregando segundos si faltan
+        try {
+            if (val.length() == 16) { // yyyy-MM-ddTHH:mm
+                val = val + ":00";
+                return LocalDateTime.parse(val, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"));
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 }

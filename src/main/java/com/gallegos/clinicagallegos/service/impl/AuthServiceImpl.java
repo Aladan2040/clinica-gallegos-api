@@ -5,6 +5,7 @@ import com.gallegos.clinicagallegos.model.Rol;
 import com.gallegos.clinicagallegos.model.Usuario;
 import com.gallegos.clinicagallegos.repository.UsuarioRepository;
 import com.gallegos.clinicagallegos.service.AuthService;
+import com.gallegos.clinicagallegos.service.EmailService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -13,10 +14,12 @@ public class AuthServiceImpl implements AuthService {
 
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
-    public AuthServiceImpl(UsuarioRepository usuarioRepository, PasswordEncoder passwordEncoder) {
+    public AuthServiceImpl(UsuarioRepository usuarioRepository, PasswordEncoder passwordEncoder, EmailService emailService) {
         this.usuarioRepository = usuarioRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     @Override
@@ -38,7 +41,18 @@ public class AuthServiceImpl implements AuthService {
         //Asignar rol por defecto y save
         nuevoUsuario.setRol(Rol.PACIENTE);
 
-        return usuarioRepository.save(nuevoUsuario);
+        Usuario usuarioRegistrado = usuarioRepository.save(nuevoUsuario);
+
+        String subject = "Bieinvenido/a a la Clínica Dental Gallegos";
+        String body = String.format(
+                "Hola %s,\n\nGracias por registrarte en la Clínica Dental Gallegos.\n" +
+                        "Tu cuenta ha sido creada con éxito. Ya puedes iniciar sesión y agendar tu primera cita.\n" +
+                        "Tu email de acceso es: %s\n\n" +
+                        "¡Te esperamos!",
+                usuarioRegistrado.getNombre(), usuarioRegistrado.getEmail());
+        emailService.enviarCorreo(usuarioRegistrado.getEmail(), subject, body);
+
+        return usuarioRegistrado;
     }
 
     @Override
