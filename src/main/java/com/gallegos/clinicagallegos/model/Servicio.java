@@ -17,8 +17,7 @@ public class Servicio {
     @Column(name = "nombre", length = 100, unique = true, nullable = false)
     private String nombre;
 
-    @Lob
-    @Column(name = "descripcion")
+    @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
 
     @Column(name = "duracion_minutos", nullable = false)
