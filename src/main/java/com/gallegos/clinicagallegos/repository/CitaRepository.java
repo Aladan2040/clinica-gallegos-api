@@ -14,12 +14,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
-public interface CitaRepository  extends JpaRepository<Cita, Integer>, JpaSpecificationExecutor<Cita> {
+public interface CitaRepository extends JpaRepository<Cita, Integer>, JpaSpecificationExecutor<Cita> {
+
+    // 💡 CORRECCIÓN POSTGRESQL: Aritmética de fechas (fecha + intervalo)
+    // Se eliminó 'c.cita_id <> :citaId' para validación simple de nuevas citas,
+    // pero si necesitas validar edición, avísame para incluirlo.
     @Query(value = "SELECT COUNT(*) FROM citas c " +
             "JOIN servicios s ON c.servicio_id = s.servicio_id " +
             "WHERE c.servicio_id = :servicioId " +
             "AND c.estado IN ('PENDIENTE', 'CONFIRMADA') " +
-            "AND :nuevaInicio < DATE_ADD(c.fecha_hora, INTERVAL s.duracion_minutos MINUTE) " +
+            "AND :nuevaInicio < (c.fecha_hora + (s.duracion_minutos * INTERVAL '1 minute')) " +
             "AND :nuevaFin > c.fecha_hora",
             nativeQuery = true)
     Long countOverlappingAppointments(
@@ -28,35 +32,32 @@ public interface CitaRepository  extends JpaRepository<Cita, Integer>, JpaSpecif
             @Param("nuevaFin") LocalDateTime nuevaFin
     );
 
-    @Query("SELECT c FROM Cita c " +
-            "JOIN FETCH c.servicio s " +
-            "JOIN FETCH c.paciente p " +
-            "WHERE p.usuarioID = :pacienteId " +
-            "ORDER BY c.fechaHora ASC")
-    List<Cita> findByPacienteIdOrderAsc(@Param("pacienteId") Integer pacienteId);
-
-    @Query("SELECT c FROM Cita c " +
-            "JOIN FETCH c.servicio s " +
-            "JOIN FETCH c.paciente p " +
-            "WHERE p.usuarioID = :pacienteId " +
-            "ORDER BY c.fechaHora DESC")
-    List<Cita> findByPacienteIdOrderDesc(@Param("pacienteId") Integer pacienteId);
-
-    Page<Cita> findAll(Pageable pageable);
-    Page<Cita> findByEstado(EstadoCita estado, Pageable pageable);
-
+    // Sobrecarga para ignorar una cita específica (útil al editar)
     @Query(value = "SELECT COUNT(*) FROM citas c " +
             "JOIN servicios s ON c.servicio_id = s.servicio_id " +
             "WHERE c.servicio_id = :servicioId " +
-            "AND c.cita_id <> :citaId " +
+            "AND c.cita_id <> :citaIdIgnorar " + // Ignorar la cita actual
             "AND c.estado IN ('PENDIENTE', 'CONFIRMADA') " +
-            "AND :nuevaInicio < DATE_ADD(c.fecha_hora, INTERVAL s.duracion_minutos MINUTE) " +
+            "AND :nuevaInicio < (c.fecha_hora + (s.duracion_minutos * INTERVAL '1 minute')) " +
             "AND :nuevaFin > c.fecha_hora",
             nativeQuery = true)
-    Long countOverlappingAppointmentsExcluding(
-            @Param("citaId") Integer citaId,
+    Long countOverlappingAppointmentsIgnoring(
             @Param("servicioId") Integer servicioId,
             @Param("nuevaInicio") LocalDateTime nuevaInicio,
-            @Param("nuevaFin") LocalDateTime nuevaFin
+            @Param("nuevaFin") LocalDateTime nuevaFin,
+            @Param("citaIdIgnorar") Integer citaIdIgnorar
     );
+
+    // Consultas por Paciente (Ordenadas)
+    @Query("SELECT c FROM Cita c JOIN FETCH c.servicio s JOIN FETCH c.paciente p WHERE p.usuarioID = :pacienteId ORDER BY c.fechaHora ASC")
+    List<Cita> findByPacienteIdOrderAsc(@Param("pacienteId") Integer pacienteId);
+
+    @Query("SELECT c FROM Cita c JOIN FETCH c.servicio s JOIN FETCH c.paciente p WHERE p.usuarioID = :pacienteId ORDER BY c.fechaHora DESC")
+    List<Cita> findByPacienteIdOrderDesc(@Param("pacienteId") Integer pacienteId);
+
+    // Métodos básicos para Admin
+    Page<Cita> findAll(Pageable pageable);
+    Page<Cita> findByEstado(EstadoCita estado, Pageable pageable);
+
+    // El método findAll(Specification, Pageable) viene gratis por JpaSpecificationExecutor
 }

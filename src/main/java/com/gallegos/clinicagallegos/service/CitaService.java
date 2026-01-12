@@ -11,23 +11,47 @@ import java.util.List;
 
 public interface CitaService {
 
-    //Metodo para registrar una nueva cita, incluyendo verificacion en caso de conlicto
-    Cita agendarNuevaCita(Cita cita, Integer servicioId);
+        /**
+         * Agenda una nueva cita para un paciente, verificando disponibilidad.
+         */
+        Cita agendarNuevaCita(Cita cita, Integer servicioId);
 
-    //Metodo para obtener las citas de un paciente
-    List<Cita> findCitasByPaciente(Usuario paciente, String orden);
+        /**
+         * Obtiene la lista de citas de un paciente específico.
+         * Se puede especificar un orden ('asc' o 'desc').
+         */
+        List<Cita> findCitasByPaciente(Usuario paciente, String orden);
 
-    //Metodo auxiliar para la logica de agendamiento
-    void verificarDisponibilidad(Integer servicioId, LocalDateTime inicio, int duracionMinutos);
+        /**
+         * Metodo auxiliar para la logica de agendamiento.
+         * Verifica conflictos de horario antes de guardar.
+         */
+        void verificarDisponibilidad(Integer servicioId, LocalDateTime inicio, int duracionMinutos);
 
-    Cita cancelarCita(Integer citaId, Integer usuarioId);
+        /**
+         * Cancela una cita existente si cumple con las reglas de negocio (dueño, estado).
+         */
+        Cita cancelarCita(Integer citaId, Integer usuarioId);
 
-    Page<Cita> findAllCitasAdmin(EstadoCita estado, Pageable pageable);
-    Cita cambiarEstadoCitaAdmin(Integer citaId, EstadoCita nuevoEstado);
+        /**
+         * Lista citas para el panel de administración con soporte de paginación.
+         * Filtra por estado opcionalmente.
+         */
+        Page<Cita> findAllCitasAdmin(EstadoCita estado, Pageable pageable);
 
-    Page<Cita> buscarCitasAdmin(String q, EstadoCita estado, Integer servicioId, LocalDateTime desde, LocalDateTime hasta, Pageable pageable);
-    Cita editarCitaAdmin(Integer citaId, Integer servicioId, LocalDateTime fechaHora, String notas);
+        /**
+         * Permite a un administrador cambiar el estado de cualquier cita.
+         */
+        Cita cambiarEstadoCitaAdmin(Integer citaId, EstadoCita nuevoEstado);
 
-    // Método para que el admin agende citas para un usuario específico
-    Cita agendarCitaParaUsuario(Integer pacienteId, Integer servicioId, LocalDateTime fechaHora, String notas);
+        /**
+         * Búsqueda avanzada para el panel de administración.
+         * Permite buscar por texto (nombre paciente/servicio), estado, servicio y rango de fechas.
+         */
+        Page<Cita> buscarCitasAdmin(String q, EstadoCita estado, Integer servicioId, LocalDateTime desde, LocalDateTime hasta, Pageable pageable);
+
+        /**
+         * Permite a un administrador editar los detalles de una cita existente.
+         */
+        Cita editarCitaAdmin(Integer citaId, Integer servicioId, LocalDateTime fechaHora, String notas);
 }
