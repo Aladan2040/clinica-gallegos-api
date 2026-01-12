@@ -79,7 +79,7 @@ public class DataInitializer {
         };
     }
 
-    // Método auxiliar para crear objetos Servicio más limpio
+    // Metodo auxiliar para crear objetos Servicio más limpio
     private Servicio crearServicio(String nombre, String descripcion, Integer duracion, BigDecimal costo) {
         Servicio s = new Servicio();
         s.setNombre(nombre);
