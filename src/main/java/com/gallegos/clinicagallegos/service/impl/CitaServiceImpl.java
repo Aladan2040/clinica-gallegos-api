@@ -36,6 +36,9 @@ public class CitaServiceImpl implements CitaService {
         this.emailService = emailService;
     }
 
+    // ... (Mantén todos los métodos existentes: agendarNuevaCita, findCitasByPaciente, verificarDisponibilidad, cancelarCita, findAllCitasAdmin, cambiarEstadoCitaAdmin, buscarCitasAdmin, editarCitaAdmin) ...
+    // COPIA AQUÍ LOS MÉTODOS ANTERIORES SI ES NECESARIO O MANTÉN EL ARCHIVO COMO ESTABA Y AÑADE EL SIGUIENTE AL FINAL
+
     @Override
     public Cita agendarNuevaCita(Cita nuevaCita, Integer servicioId) {
         Servicio servicio = servicioRepository.findById(servicioId)
@@ -46,8 +49,6 @@ public class CitaServiceImpl implements CitaService {
         nuevaCita.setFechaCreacion(LocalDateTime.now());
 
         // Calcular fin para validación
-        // NOTA: No usamos verificarDisponibilidad() directamente aquí porque necesitamos pasar el ID para la query
-        // pero podemos refactorizar.
         verificarDisponibilidad(servicioId, nuevaCita.getFechaHora(), servicio.getDuracionMinutos());
 
         Cita citaGuardada = citaRepository.save(nuevaCita);
@@ -66,7 +67,6 @@ public class CitaServiceImpl implements CitaService {
     @Override
     public void verificarDisponibilidad(Integer servicioId, LocalDateTime inicio, int duracionMinutos) {
         LocalDateTime fin = inicio.plusMinutes(duracionMinutos);
-        // Usamos la query corregida para Postgres
         Long solapamientos = citaRepository.countOverlappingAppointments(servicioId, inicio, fin);
 
         if (solapamientos > 0) {
@@ -112,7 +112,6 @@ public class CitaServiceImpl implements CitaService {
             cita.setEstado(nuevoEstado);
             Cita guardada = citaRepository.save(cita);
 
-            // Enviar correo solo en cambios relevantes
             if (nuevoEstado == EstadoCita.CONFIRMADA || nuevoEstado == EstadoCita.CANCELADA) {
                 enviarNotificacionCambioEstado(guardada, estadoAnterior, nuevoEstado);
             }
@@ -126,7 +125,6 @@ public class CitaServiceImpl implements CitaService {
         Specification<Cita> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            // Filtro de texto (nombre paciente o servicio)
             if (StringUtils.hasText(q)) {
                 String likePattern = "%" + q.toLowerCase() + "%";
                 Predicate nombrePaciente = cb.like(cb.lower(root.get("paciente").get("nombre")), likePattern);
@@ -164,15 +162,13 @@ public class CitaServiceImpl implements CitaService {
 
         boolean cambioHorario = false;
 
-        // Actualizar Servicio si cambió
         if (servicioId != null && !servicioId.equals(cita.getServicio().getServicioId())) {
             Servicio nuevoServicio = servicioRepository.findById(servicioId)
                     .orElseThrow(() -> new RuntimeException("Servicio no encontrado"));
             cita.setServicio(nuevoServicio);
-            cambioHorario = true; // Cambiar servicio puede cambiar duración
+            cambioHorario = true;
         }
 
-        // Actualizar Fecha si cambió
         if (fechaHora != null && !fechaHora.isEqual(cita.getFechaHora())) {
             cita.setFechaHora(fechaHora);
             cambioHorario = true;
@@ -182,16 +178,14 @@ public class CitaServiceImpl implements CitaService {
             cita.setNotas(notas);
         }
 
-        // Validar disponibilidad si hubo cambios de tiempo/servicio
         if (cambioHorario) {
             LocalDateTime fin = cita.getFechaHora().plusMinutes(cita.getServicio().getDuracionMinutos());
 
-            // Usamos la query que IGNORA el ID actual para no chocar consigo misma
             Long conflictos = citaRepository.countOverlappingAppointmentsIgnoring(
                     cita.getServicio().getServicioId(),
                     cita.getFechaHora(),
                     fin,
-                    citaId // Ignoramos esta cita
+                    citaId
             );
 
             if (conflictos > 0) {
@@ -202,7 +196,24 @@ public class CitaServiceImpl implements CitaService {
         return citaRepository.save(cita);
     }
 
-    // --- Métodos Privados de Correo (Reutilizados) ---
+    // ✅ IMPLEMENTACIÓN DEL METODO FALTANTE
+    @Override
+    public Cita agendarCitaParaUsuario(Integer usuarioId, Integer servicioId, LocalDateTime fechaHora, String notas) {
+        // 1. Buscar al usuario
+        Usuario paciente = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new RuntimeException("Paciente no encontrado"));
+
+        // 2. Crear objeto Cita
+        Cita nuevaCita = new Cita();
+        nuevaCita.setPaciente(paciente);
+        nuevaCita.setFechaHora(fechaHora);
+        nuevaCita.setNotas(notas);
+
+        // 3. Reutilizar lógica de agendamiento (asigna servicio, valida, guarda, notifica)
+        return agendarNuevaCita(nuevaCita, servicioId);
+    }
+
+    // --- Métodos Privados de Correo ---
 
     private void enviarCorreoAgendamiento(Cita cita) {
         try {
