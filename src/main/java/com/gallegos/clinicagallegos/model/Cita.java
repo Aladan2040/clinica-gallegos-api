@@ -34,8 +34,7 @@ public class Cita {
     @Column(name = "estado", length = 15, nullable = false)
     private EstadoCita estado;
 
-    @Lob
-    @Column(name = "notas")
+    @Column(name = "notas", columnDefinition = "TEXT")
     private String notas;
 
     @Column(name = "fecha_creacion", columnDefinition = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")

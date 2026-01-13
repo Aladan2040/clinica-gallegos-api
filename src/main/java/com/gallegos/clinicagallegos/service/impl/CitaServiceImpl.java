@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Transactional
 public class CitaServiceImpl implements CitaService {
 
     private final CitaRepository citaRepository;
@@ -36,9 +38,6 @@ public class CitaServiceImpl implements CitaService {
         this.emailService = emailService;
     }
 
-    // ... (Mantén todos los métodos existentes: agendarNuevaCita, findCitasByPaciente, verificarDisponibilidad, cancelarCita, findAllCitasAdmin, cambiarEstadoCitaAdmin, buscarCitasAdmin, editarCitaAdmin) ...
-    // COPIA AQUÍ LOS MÉTODOS ANTERIORES SI ES NECESARIO O MANTÉN EL ARCHIVO COMO ESTABA Y AÑADE EL SIGUIENTE AL FINAL
-
     @Override
     public Cita agendarNuevaCita(Cita nuevaCita, Integer servicioId) {
         Servicio servicio = servicioRepository.findById(servicioId)
@@ -52,11 +51,19 @@ public class CitaServiceImpl implements CitaService {
         verificarDisponibilidad(servicioId, nuevaCita.getFechaHora(), servicio.getDuracionMinutos());
 
         Cita citaGuardada = citaRepository.save(nuevaCita);
-        enviarCorreoAgendamiento(citaGuardada);
+
+        // El envío de correo puede fallar sin afectar la transacción principal
+        try {
+            enviarCorreoAgendamiento(citaGuardada);
+        } catch (Exception e) {
+            System.err.println("Error enviando correo (no bloqueante): " + e.getMessage());
+        }
+
         return citaGuardada;
     }
 
     @Override
+    @Transactional(readOnly = true) // Optimización para lectura
     public List<Cita> findCitasByPaciente(Usuario paciente, String orden) {
         if ("asc".equalsIgnoreCase(orden)) {
             return citaRepository.findByPacienteIdOrderAsc(paciente.getUsuarioID());
@@ -90,11 +97,16 @@ public class CitaServiceImpl implements CitaService {
         cita.setEstado(EstadoCita.CANCELADA);
         Cita guardada = citaRepository.save(cita);
 
-        enviarNotificacionCambioEstado(guardada, EstadoCita.PENDIENTE, EstadoCita.CANCELADA);
+        try {
+            enviarNotificacionCambioEstado(guardada, EstadoCita.PENDIENTE, EstadoCita.CANCELADA);
+        } catch (Exception e) {
+            System.err.println("Error enviando correo cancelacion: " + e.getMessage());
+        }
         return guardada;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<Cita> findAllCitasAdmin(EstadoCita estado, Pageable pageable) {
         if (estado != null) {
             return citaRepository.findByEstado(estado, pageable);
@@ -113,7 +125,11 @@ public class CitaServiceImpl implements CitaService {
             Cita guardada = citaRepository.save(cita);
 
             if (nuevoEstado == EstadoCita.CONFIRMADA || nuevoEstado == EstadoCita.CANCELADA) {
-                enviarNotificacionCambioEstado(guardada, estadoAnterior, nuevoEstado);
+                try {
+                    enviarNotificacionCambioEstado(guardada, estadoAnterior, nuevoEstado);
+                } catch (Exception e) {
+                    System.err.println("Error correo cambio estado: " + e.getMessage());
+                }
             }
             return guardada;
         }
@@ -121,6 +137,7 @@ public class CitaServiceImpl implements CitaService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<Cita> buscarCitasAdmin(String q, EstadoCita estado, Integer servicioId, LocalDateTime desde, LocalDateTime hasta, Pageable pageable) {
         Specification<Cita> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -196,67 +213,55 @@ public class CitaServiceImpl implements CitaService {
         return citaRepository.save(cita);
     }
 
-    // ✅ IMPLEMENTACIÓN DEL METODO FALTANTE
     @Override
     public Cita agendarCitaParaUsuario(Integer usuarioId, Integer servicioId, LocalDateTime fechaHora, String notas) {
-        // 1. Buscar al usuario
         Usuario paciente = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new RuntimeException("Paciente no encontrado"));
 
-        // 2. Crear objeto Cita
         Cita nuevaCita = new Cita();
         nuevaCita.setPaciente(paciente);
         nuevaCita.setFechaHora(fechaHora);
         nuevaCita.setNotas(notas);
 
-        // 3. Reutilizar lógica de agendamiento (asigna servicio, valida, guarda, notifica)
         return agendarNuevaCita(nuevaCita, servicioId);
     }
 
     // --- Métodos Privados de Correo ---
 
     private void enviarCorreoAgendamiento(Cita cita) {
-        try {
-            String to = cita.getPaciente().getEmail();
-            String subject = "Cita Agendada: " + cita.getServicio().getNombre();
-            String body = String.format(
-                    "Hola %s,\n\nTu cita ha sido agendada con éxito.\n" +
-                            "Servicio: %s\n" +
-                            "Fecha y Hora: %s\n" +
-                            "Estado: PENDIENTE\n\n" +
-                            "Por favor, preséntate 10 minutos antes.\nGracias.",
-                    cita.getPaciente().getNombre(),
-                    cita.getServicio().getNombre(),
-                    cita.getFechaHora().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
-            );
-            emailService.enviarCorreo(to, subject, body);
-        } catch (Exception e) {
-            System.err.println("Error enviando correo cita: " + e.getMessage());
-        }
+        String to = cita.getPaciente().getEmail();
+        String subject = "Cita Agendada: " + cita.getServicio().getNombre();
+        String body = String.format(
+                "Hola %s,\n\nTu cita ha sido agendada con éxito.\n" +
+                        "Servicio: %s\n" +
+                        "Fecha y Hora: %s\n" +
+                        "Estado: PENDIENTE\n\n" +
+                        "Por favor, preséntate 10 minutos antes.\nGracias.",
+                cita.getPaciente().getNombre(),
+                cita.getServicio().getNombre(),
+                cita.getFechaHora().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+        );
+        emailService.enviarCorreo(to, subject, body);
     }
 
     private void enviarNotificacionCambioEstado(Cita cita, EstadoCita anterior, EstadoCita nuevo) {
-        try {
-            String to = cita.getPaciente().getEmail();
-            String servicio = cita.getServicio().getNombre();
-            String fechaHora = cita.getFechaHora().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
-            String subject = "Actualización de Cita - Clínica Gallegos";
-            String body = "";
+        String to = cita.getPaciente().getEmail();
+        String servicio = cita.getServicio().getNombre();
+        String fechaHora = cita.getFechaHora().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+        String subject = "Actualización de Cita - Clínica Gallegos";
+        String body = "";
 
-            if (nuevo == EstadoCita.CONFIRMADA) {
-                subject = "✅ ¡Cita Confirmada!";
-                body = String.format("Estimado/a %s,\n\nSu cita para '%s' el %s ha sido CONFIRMADA.",
-                        cita.getPaciente().getNombre(), servicio, fechaHora);
-            } else if (nuevo == EstadoCita.CANCELADA) {
-                subject = "❌ Cita Cancelada";
-                body = String.format("Estimado/a %s,\n\nSu cita para '%s' el %s ha sido CANCELADA.",
-                        cita.getPaciente().getNombre(), servicio, fechaHora);
-            } else {
-                return;
-            }
-            emailService.enviarCorreo(to, subject, body);
-        } catch (Exception e) {
-            System.err.println("Error enviando notificacion estado: " + e.getMessage());
+        if (nuevo == EstadoCita.CONFIRMADA) {
+            subject = "✅ ¡Cita Confirmada!";
+            body = String.format("Estimado/a %s,\n\nSu cita para '%s' el %s ha sido CONFIRMADA.",
+                    cita.getPaciente().getNombre(), servicio, fechaHora);
+        } else if (nuevo == EstadoCita.CANCELADA) {
+            subject = "❌ Cita Cancelada";
+            body = String.format("Estimado/a %s,\n\nSu cita para '%s' el %s ha sido CANCELADA.",
+                    cita.getPaciente().getNombre(), servicio, fechaHora);
+        } else {
+            return;
         }
+        emailService.enviarCorreo(to, subject, body);
     }
 }
