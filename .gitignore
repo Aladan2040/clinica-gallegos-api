@@ -31,3 +31,15 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Docker ###
+*.log
+.env
+.env.local
+backup.sql
+postgres_data/
+pgadmin_data/
+
+### macOS ###
+.DS_Store
+
