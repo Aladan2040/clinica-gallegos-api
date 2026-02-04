@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Servicio de Base de Datos PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: clinica-gallegos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: clinicagallegos_bd
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - clinica-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clinicagallegos_bd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Servicio de la Aplicación Spring Boot
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clinica-gallegos-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Configuración de Base de Datos
+      DB_URL: jdbc:postgresql://postgres:5432/clinicagallegos_bd
+      DB_USERNAME: postgres
+      DB_PASSWORD: admin
+
+      # Configuración del Servidor
+      PORT: 8080
+
+      # Configuración de JWT
+      JWT_SECRET: 1a2b3c4d5e6f7g8h9i0jklmnopqrstuvwxyzABCD1234567890
+
+      # Configuración de Correo Brevo (OPCIONAL - Solo si usas email)
+      # Descomenta y configura si necesitas funcionalidad de email
+      # BREVO_API_KEY: tu-api-key-aqui
+      # BREVO_SENDER_EMAIL: tu-email@ejemplo.com
+
+      # Configuración de Spring
+      SPRING_PROFILES_ACTIVE: dev
+    ports:
+      - "8080:8080"
+    networks:
+      - clinica-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # (OPCIONAL) Servicio de pgAdmin para gestión de Base de Datos
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: clinica-gallegos-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@clinica.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - clinica-network
+    depends_on:
+      - postgres
+
+# Definición de Volúmenes Persistentes
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# Definición de Red
+networks:
+  clinica-network:
+    driver: bridge
